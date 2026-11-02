@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OneBISS I&amp;S Spine Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,650&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Plan: a working map. Decisions on the left, the live 20-unit spine on the right (sticky on wide screens), checks under the grid.
+   Four thread colours carry the vertical strands; origin badges say whose unit it was. */
+:root{
+  --bg:#f5f6f4; --surface:#ffffff; --ink:#1d2329; --muted:#5d6670; --line:#d9ddd8; --accent:#1f5f6b;
+  --t-gov:#3a58a0; --t-planet:#2c7a55; --t-id:#b0542a; --t-change:#7a4a98;
+  --ok:#2c7a55; --warn:#a86a00; --bad:#b3362b;
+  --display:"Source Serif 4", Georgia, "Times New Roman", serif;
+  --body:"IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#14181c; --surface:#1d2228; --ink:#e7eaec; --muted:#9aa4ad; --line:#323a42; --accent:#6fb8c4;
+    --t-gov:#8ea6e6; --t-planet:#6fc497; --t-id:#e79465; --t-change:#c09ae0;
+    --ok:#6fc497; --warn:#e2b04d; --bad:#ef8577; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#14181c; --surface:#1d2228; --ink:#e7eaec; --muted:#9aa4ad; --line:#323a42; --accent:#6fb8c4;
+  --t-gov:#8ea6e6; --t-planet:#6fc497; --t-id:#e79465; --t-change:#c09ae0;
+  --ok:#6fc497; --warn:#e2b04d; --bad:#ef8577; color-scheme: dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 var(--body)}
+h1,h2,h3{font-family:var(--display);font-weight:650;text-wrap:balance;margin:0}
+h1{font-size:30px;line-height:1.15}
+h2{font-size:21px}
+h3{font-size:16px}
+p{margin:0}
+.wrap{max-width:1500px;margin:0 auto;padding:28px 20px 60px}
+header.top{display:grid;gap:12px;max-width:900px;margin-bottom:22px}
+.lede{color:var(--muted);max-width:75ch}
+.bottomline{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--accent);padding:12px 14px;border-radius:6px;max-width:900px}
+.bottomline b{font-weight:600}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:13px;color:var(--muted);align-items:center}
+.sw{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 0}
+button{font:inherit;cursor:pointer}
+.btn{border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:7px 12px;border-radius:6px;font-size:14px}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--bg)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.layout{display:grid;grid-template-columns:minmax(320px,430px) 1fr;gap:24px;align-items:start}
+@media (max-width:1050px){.layout{grid-template-columns:1fr}}
+.sticky{position:sticky;top:12px}
+@media (max-width:1050px){.sticky{position:static}}
+
+/* decisions */
+.decisions{display:grid;gap:14px}
+.dec{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px}
+.dec .tag{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.dec h3{margin:2px 0 6px}
+.dec .ctx{font-size:13.5px;color:var(--muted);margin-bottom:10px}
+.opt{display:grid;grid-template-columns:18px 1fr;gap:8px;padding:8px 9px;border:1px solid var(--line);border-radius:6px;margin-top:6px;cursor:pointer}
+.opt:hover{border-color:var(--accent)}
+.opt input{margin:3px 0 0;accent-color:var(--accent)}
+.opt.sel{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}
+.opt .ol{font-weight:600;font-size:14px}
+.opt .od{font-size:13px;color:var(--muted);margin-top:2px}
+.rec{font-size:11px;font-weight:600;color:var(--accent);border:1px solid var(--accent);border-radius:999px;padding:0 7px;margin-left:6px;white-space:nowrap}
+.then{margin-top:10px;font-size:13px;border-top:1px dashed var(--line);padding-top:8px}
+.then b{font-weight:600}
+.then ul{margin:4px 0 0;padding-left:18px}
+
+/* grid */
+.gridbox{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px;overflow-x:auto}
+.spine{display:grid;grid-template-columns:62px repeat(4,minmax(150px,1fr));gap:8px;min-width:720px}
+.colh{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600;padding:0 2px}
+.colh.span2{grid-column:span 2;border-bottom:1px solid var(--line);padding-bottom:4px}
+.yr{font-family:var(--display);font-weight:650;font-size:17px;align-self:center}
+.yr small{display:block;font-family:var(--body);font-weight:400;font-size:11.5px;color:var(--muted)}
+.card{position:relative;text-align:left;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px 9px 8px 13px;color:var(--ink);display:grid;gap:4px;align-content:start;transition:border-color .15s}
+.card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;border-radius:6px 0 0 6px;background:var(--tc)}
+.card:hover{border-color:var(--tc)}
+.card.active{border-color:var(--tc);box-shadow:0 0 0 1px var(--tc)}
+.card.changed{animation:flash .9s ease}
+@keyframes flash{from{background:color-mix(in srgb,var(--tc) 22%,var(--bg))}to{background:var(--bg)}}
+@media (prefers-reduced-motion:reduce){.card.changed{animation:none}}
+.card .t{font-weight:600;font-size:13.5px;line-height:1.25}
+.card .q{font-size:12px;color:var(--muted);line-height:1.3}
+.chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:2px}
+.chip{font-size:11px;border:1px solid var(--line);border-radius:4px;padding:0 5px;color:var(--muted);background:var(--surface)}
+.chip.crit{font-variant-numeric:tabular-nums;color:var(--ink);font-weight:600}
+.badge{font-size:10.5px;font-weight:600;border-radius:999px;padding:0 6px;justify-self:start}
+.b-S{background:color-mix(in srgb,var(--t-gov) 16%,transparent);color:var(--t-gov)}
+.b-G{background:color-mix(in srgb,var(--t-id) 16%,transparent);color:var(--t-id)}
+.b-M{background:color-mix(in srgb,var(--t-planet) 18%,transparent);color:var(--t-planet)}
+.b-N{background:color-mix(in srgb,var(--t-change) 16%,transparent);color:var(--t-change)}
+.alignnote{font-size:12px;color:var(--muted)}
+td.bbunit b{display:block}
+
+.detail{margin-top:12px;border-top:1px solid var(--line);padding-top:12px;display:grid;gap:8px}
+.detail .meta{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--muted)}
+.detail .meta b{color:var(--ink);font-weight:600}
+.detail ul{margin:2px 0 0;padding-left:18px;font-size:14px}
+.detail .cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:700px){.detail .cols{grid-template-columns:1fr}}
+.hint{font-size:12.5px;color:var(--muted)}
+
+/* checks */
+.checks{margin-top:14px;display:grid;gap:8px}
+.checks h3{font-size:15px}
+.ckgrid{display:grid;grid-template-columns:62px repeat(3,minmax(140px,1fr));gap:6px;font-size:12.5px;min-width:620px}
+.ck{border:1px solid var(--line);border-radius:5px;padding:5px 7px;background:var(--bg)}
+.ck.ok{border-left:4px solid var(--ok)}
+.ck.warn{border-left:4px solid var(--warn)}
+.ck.bad{border-left:4px solid var(--bad)}
+.ck .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.prog{display:flex;flex-wrap:wrap;gap:8px}
+.pill{font-size:12.5px;border-radius:999px;padding:3px 10px;border:1px solid var(--line);background:var(--bg)}
+.pill.ok{border-color:var(--ok);color:var(--ok)}
+.pill.warn{border-color:var(--warn);color:var(--warn)}
+
+/* lower sections */
+section.lower{margin-top:34px;display:grid;gap:12px}
+.tablewrap{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:13.5px;min-width:680px}
+th,td{text-align:left;vertical-align:top;padding:8px 10px;border-bottom:1px solid var(--line)}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;background:var(--bg)}
+tr:last-child td{border-bottom:none}
+td.y{white-space:nowrap;font-weight:600}
+.mv{color:var(--accent);font-weight:600}
+.twocol{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:900px){.twocol{grid-template-columns:1fr}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px}
+.panel ul{margin:6px 0 0;padding-left:18px}
+.panel li{margin-bottom:4px}
+#copyout{width:100%;min-height:160px;margin-top:8px;font:12.5px/1.4 ui-monospace,Menlo,monospace;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:8px;display:none}
+.status{font-size:13px;color:var(--ok);align-self:center}
+
+/* key concepts: warm; global contexts: cool */
+:root{--k1:#c2362f;--k2:#d0621a;--k3:#a67800;--k4:#b83270;--k5:#8a5a2b;--g1:#2a62c9;--g2:#0a87ad;--g3:#0f8a72;--g4:#3a842c;--g5:#6a4cc2;--g6:#46527e}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--k1:#f07a6e;--k2:#f39a55;--k3:#e3bb4a;--k4:#ee7fb0;--k5:#d0a272;--g1:#7ea6f2;--g2:#5cc6e6;--g3:#5ccdb3;--g4:#86cc72;--g5:#ae98f0;--g6:#9ea9d4}}
+:root[data-theme="dark"]{--k1:#f07a6e;--k2:#f39a55;--k3:#e3bb4a;--k4:#ee7fb0;--k5:#d0a272;--g1:#7ea6f2;--g2:#5cc6e6;--g3:#5ccdb3;--g4:#86cc72;--g5:#ae98f0;--g6:#9ea9d4}
+.chip.cc{color:var(--c);border-color:color-mix(in srgb,var(--c) 45%,transparent);background:color-mix(in srgb,var(--c) 12%,var(--surface));font-weight:500}
+.k1{--c:var(--k1)}.k2{--c:var(--k2)}.k3{--c:var(--k3)}.k4{--c:var(--k4)}.k5{--c:var(--k5)}
+.g1{--c:var(--g1)}.g2{--c:var(--g2)}.g3{--c:var(--g3)}.g4{--c:var(--g4)}.g5{--c:var(--g5)}.g6{--c:var(--g6)}
+.legend .lh{font-weight:600;color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="top">
+  <h1>OneBISS I&amp;S Spine Map, MYP1–5</h1>
+  <p class="lede">A proposed merged spine of 20 units (four per year, two per term), built from the Sentrum sequence of September 2026, the Gausel I&amp;S subject overview, the Gausel MYP4–5 planners in Toddle, the current Gausel MYP2 list, and the notes from our collaboration session. Each open question is a choice on the left. Pick an option and the spine and coverage checks on the right update to match.</p>
+  <div class="bottomline"><b>Bottom line:</b> once units are paired by concept, the two schools already line up in almost every slot. The real choices are where governance lives in MYP1, whether MYP2 ends with Refugees or Sustainable Energy, and how much of Fringes (now an optional last unit in MYP5) moves into the MYP4 hate unit so every student meets it. Four strands run up the five years: power and governance, people and planet, identity and belonging, and change and innovation. The recommended path (loaded now) assesses every criterion once per term, uses all six global contexts, and gives revolutions, WWI and climate one clear home each.</div>
+  <div class="legend" aria-label="Legend">
+    <span><span class="sw" style="background:var(--t-gov)"></span>Power &amp; governance</span>
+    <span><span class="sw" style="background:var(--t-planet)"></span>People &amp; planet</span>
+    <span><span class="sw" style="background:var(--t-id)"></span>Identity &amp; belonging</span>
+    <span><span class="sw" style="background:var(--t-change)"></span>Change &amp; innovation</span>
+    <span>·</span>
+    <span class="badge b-S">Sentrum</span><span class="badge b-G">Gausel</span><span class="badge b-M">Merged</span><span class="badge b-N">New</span>
+  </div>
+  <div class="legend" aria-label="Key concept colours"><span class="lh">Key concepts</span><span class="chip cc k1">Change</span><span class="chip cc k2">Global interactions</span><span class="chip cc k3">Systems</span><span class="chip cc k4">Time, place &amp; space</span><span class="chip cc k5">Identity</span></div>
+  <div class="legend" aria-label="Global context colours"><span class="lh">Global contexts</span><span class="chip cc g1">Orientation in space &amp; time</span><span class="chip cc g2">Scientific &amp; technical innovation</span><span class="chip cc g3">Identities &amp; relationships</span><span class="chip cc g4">Globalization &amp; sustainability</span><span class="chip cc g5">Personal &amp; cultural expression</span><span class="chip cc g6">Fairness &amp; development</span></div>
+  <div class="toolbar">
+    <button class="btn" id="reset" type="button">Reset to recommended path</button>
+    <button class="btn primary" id="copy" type="button">Copy this path as text</button>
+    <span class="status" id="copystatus" role="status"></span>
+  </div>
+  <textarea id="copyout" aria-label="Path summary as text" readonly></textarea>
+</header>
+
+<div class="layout">
+  <div>
+    <h2 style="margin-bottom:10px">Choose your path</h2>
+    <div class="decisions" id="decisions"></div>
+  </div>
+  <div class="sticky">
+    <div class="gridbox">
+      <div class="spine" id="spine"></div>
+      <div class="detail" id="detail" aria-live="polite"></div>
+      <div class="checks" id="checks"></div>
+    </div>
+  </div>
+</div>
+
+<section class="lower">
+  <h2>Where revolutions and WWI sit</h2>
+  <p class="lede">Revolutions currently turn up in eight places across both schools. The proposal gives the Industrial Revolution one owner (MYP3) and keeps "innovation and revolution" as a concept everywhere else.</p>
+  <div class="tablewrap"><table id="revtable"></table></div>
+</section>
+
+<section class="lower">
+  <h2>Where climate and human impact sit</h2>
+  <p class="lede">Biomes, the carbon cycle, deforestation and climate change are spread so each year meets them through a different lens: ecological systems, local tourism, technology, cities, then cause and effect.</p>
+  <div class="tablewrap"><table id="climtable"></table></div>
+</section>
+
+<section class="lower">
+  <h2>Blackboard view</h2>
+  <p class="lede">The same path laid out in the six columns of the alignment blackboard, ready to transcribe into Canva or the Excel map. It updates with your choices.</p>
+  <div class="toolbar"><button class="btn" id="copybb" type="button">Copy blackboard rows as text</button><span class="status" id="bbstatus" role="status"></span></div>
+  <textarea id="bbout" aria-label="Blackboard rows as text" readonly style="width:100%;min-height:160px;display:none;font:12.5px/1.4 ui-monospace,Menlo,monospace;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:8px"></textarea>
+  <div class="tablewrap"><table id="bbtable"></table></div>
+</section>
+
+<section class="lower">
+  <div class="twocol">
+    <div class="panel">
+      <h3>Before anything is final</h3>
+      <ul>
+        <li><b>Transfer every unit into the 2027–28 Toddle</b>, including units this map folds or retires (Charismatic Leaders, Vanishing Points, Fair Access &amp; HDI, Plastics). Hide them from parents until the merge is confirmed.</li>
+        <li>The spine fixes key concept, related concepts, global context and criteria. Content, texts and case studies stay with the teacher, so "same concepts, different content" is allowed in parallel classes.</li>
+        <li>The WWII and Holocaust core in MYP4 is what the LK20 aim on genocide and extremism (and the Germany-trip audit) would look for. Confirm with IT before trimming it.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>What this map could not see</h3>
+      <ul>
+        <li>Gausel MYP1–3 come from the 2024–25 subject overview. For MYP2, the current list from the Gausel teacher takes priority (Renaissance &amp; Enlightenment, Slavery, Human Development, Sustainable Energy). Confirm both with her when she is back from leave.</li>
+        <li>Gausel's MYP1 is Maps, Ancient Civilisations, Middle Ages, then a new Global Organisations unit. Its planner isn't in the project yet.</li>
+        <li>Gausel's 2024–25 MYP2 biomes and climate unit has a home in Biomes to Batteries. Their natural hazards unit doesn't: its material can feed the disasters week in MYP4 Turning Points.</li>
+        <li>In MYP5, students sitting the eAssessment do eAssessment preparation in the Fringes slot. The criteria checks for Term 2 show the Fringes track.</li>
+        <li>Whether Science (Kinga) already teaches biomes. If so, the MYP2 energy unit could run as an IDU with Science.</li>
+        <li>Gausel's MYP5 Term 3 (eAssessment preparation) is outside the 20 units and needs its own clause.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+</div>
+
+<script>
+const GC = {STI:"Scientific & technical innovation",OST:"Orientation in space & time",FD:"Fairness & development",IR:"Identities & relationships",PCE:"Personal & cultural expression",GS:"Globalization & sustainability"};
+const THREAD = {gov:"--t-gov",planet:"--t-planet",id:"--t-id",change:"--t-change"};
+const THREADNAME = {gov:"Power & governance",planet:"People & planet",id:"Identity & belonging",change:"Change & innovation"};
+const ORIGIN = {S:"Sentrum",G:"Gausel",M:"Merged",N:"New"};
+const KCCLS = {"Change":"k1","Global interactions":"k2","Systems":"k3","Time, place & space":"k4","Identity":"k5"};
+const GCCLS = {OST:"g1",STI:"g2",IR:"g3",GS:"g4",PCE:"g5",FD:"g6"};
+const kcChip = k=>`<span class="chip cc ${KCCLS[k]||"k5"}">${k}</span>`;
+const gcChip = g=>`<span class="chip cc ${GCCLS[g]}">${GC[g]}</span>`;
+
+const DECISIONS = [
+ {id:"d0",tag:"MYP1 · Term 2",title:"Where does governance live in MYP1?",
+  ctx:"Gausel's MYP1 runs Maps, Ancient Civilisations, Middle Ages, then a new fourth unit on global organisations. Maps pairs with Settlements and the Middle Ages with Historical Evidence, and Sentrum's religion unit has moved into Ancient Civilisations. Democracy vs Dictatorship has moved down to MYP1 but has no slot yet.",
+  opts:[
+   {v:"a",rec:true,l:"Global Organisations becomes a governance unit",d:"How should people govern themselves, then govern together? It starts with forms of government (Sentrum's Democracy vs Dictatorship), then looks at why states cooperate (UN, EU, NATO, Nordic Council). It works as an early version of Ideal Societies, and it keeps Gausel's new unit."},
+   {v:"b",l:"Governance goes into Ancient Civilisations",d:"Greek and Roman government sits beside Indus Valley and early China in Ancient Civilisations. Global Organisations stays as Gausel has planned it. Ancient Civilisations becomes very full."},
+   {v:"c",l:"Global Organisations as Gausel has it; governance waits",d:"No governance unit until MYP4 Cities & Ideal Societies. That leaves a gap in the power and governance strand from MYP1 to MYP3."}]},
+ {id:"d1",tag:"MYP2 · Term 2",title:"MYP2's fourth unit: Refugees or Sustainable Energy?",
+  ctx:"Three MYP2 units already pair up: Renaissance & Enlightenment with Ideas in Motion, Slavery with Slavery, and Human Development with Fair Access & HDI. Gausel's fourth is Sustainable Energy (10 hours). Sentrum's is Refugees, the IDU with English.",
+  opts:[
+   {v:"a",rec:true,l:"Sustainable Energy, rebuilt as Biomes to Batteries",d:"Gausel's energy unit plus their old biomes and climate material: ecosystems, carbon cycle and deforestation first, then energy choices. Refugee content moves to MYP4 Population, and the English IDU moves to Slavery."},
+   {v:"b",l:"Refugees stays as the IDU with English",d:"Sustainable energy moves into MYP3 Tourism and MYP4 Turning Points. Students meet biomes for the first time in MYP4."},
+   {v:"c",l:"Refugees stays; energy folds into Human Development",d:"Gausel's energy unit is only 10 hours, so energy access becomes a strand of Human Development (SDG 7). Biomes still waits until MYP4."}]},
+ {id:"d2",tag:"MYP3 · Term 2",title:"How much WWI goes into the new revolutions unit?",
+  ctx:"Gausel's \"War and Revolution: why do societies experience revolution?\" (nationalism, WWI, then a revolution caused by the war) merges with Sentrum's Future Ready Careers under Scientific & technical innovation.",
+  opts:[
+   {v:"a",rec:true,l:"WWI as a 1–2 week hook, then industrial and technological revolutions",d:"This is the collab session's plan. The first industrialised war shows technology changing society, then Industrial Revolution, digital revolution, AI and careers. Gausel's revolution-after-WWI investigation becomes the origin story in MYP5 Current World Order."},
+   {v:"b",l:"Two kinds of revolution",d:"First half: WWI and a revolution it caused (Gausel's investigation). Second half: the technological revolution and careers. Keeps all of Gausel's material, but the unit is dense."},
+   {v:"c",l:"No WWI",d:"Start at the Industrial Revolution. WWI then has no home anywhere in I&S."}]},
+ {id:"d3",tag:"MYP4 · Term 1",title:"What happens to Charismatic Leaders?",
+  ctx:"MYP4 has five candidate units for four slots: Population, Cities, Ideal Societies, Charismatic Leaders and the WWII identities unit. Ideal Societies and Cities are already merging.",
+  opts:[
+   {v:"a",rec:true,l:"Fold it into \"Why does hate spread?\"",d:"Leadership becomes one lens on hate (Hitler, propaganda, followers), with leaders from other eras as comparison cases. Population stays as Gausel's Term 1 opener."},
+   {v:"b",l:"Keep it standalone; fold Population into Cities",d:"Population, cities and governance become one unit. Sentrum's plan already framed Ideal Societies as working \"under real population pressure\". Two units then share Identities & relationships."}]},
+ {id:"d4",tag:"MYP4 · Term 2",title:"How wide does \"Why does hate spread?\" go?",
+  ctx:"Gausel's WWII unit (\"Why do identities and relationships change?\") extended to other persecution. It links back to Slavery and kafala in MYP2. Fringes is now optional in MYP5, so students sitting the eAssessment may never reach its radicalisation work unless some of it comes in here.",
+  opts:[
+   {v:"a",rec:true,l:"WWII core plus modern cases, including radicalisation",d:"Everyone studies the road to war, propaganda, antisemitism and the Holocaust. Modern cases then bring in Fringes' ideas: online radicalisation, extremist movements, and how hate is prevented. Every student meets the LK20 extremism-prevention aim, whether or not they take Fringes."},
+   {v:"b",l:"WWII core plus one historical comparison",d:"Uyghurs, Rwanda, Bosnia, kafala or apartheid as the inquiry case. Radicalisation stays in Fringes, so students sitting the eAssessment miss it."},
+   {v:"c",l:"WWII only",d:"As Gausel teaches it now. Simplest to hand over, but the hate concept is studied through one case."},
+   {v:"d",l:"Thematic, WWII as one of three equal cases",d:"Strongest conceptual unit, thinnest Holocaust coverage. Check the LK20 audit before choosing this."}]},
+ {id:"d5",tag:"MYP4 · Term 2",title:"What does Turning Points become, replacing Gausel's Unit 4?",
+  ctx:"Gausel's \"What impact do humans have on natural environments?\" uses Change and Globalization & sustainability, the same as Turning Points, so this is a like-for-like swap. The revolutions weeks leave Turning Points, and Vanishing Points isn't running in 2027–28.",
+  opts:[
+   {v:"a",rec:true,l:"Turning Points with a climate strand",d:"Anthropocene, disease, natural disasters and why hurricanes are intensifying, the Commons, climate equity (California wildfires). Short story IDU with English stays. Research log uses the Vanishing Points dossier."},
+   {v:"b",l:"Turning Points and Vanishing Points back to back",d:"History half, then biomes, Commons and the op-ed. Covers everything but runs long for one slot."},
+   {v:"c",l:"Turning Points as it is now",d:"Keeps the Industrial Revolution week, so it doubles MYP3. Vanishing Points retires and climate stays thin. Criteria stay A·C."}]},
+ {id:"d6",tag:"MYP5 · Term 1",title:"Who has the power + Ethics: which concept and context lead?",
+  ctx:"Both units already use Systems as the key concept, so the real choice is the global context: Gausel's Fairness & development or Ethics' Personal & cultural expression.",
+  opts:[
+   {v:"a",rec:true,l:"Systems, set in Fairness & development",d:"Rights, civic responsibility, power and privilege. Ethical theories become the tools students use to judge who decides and whose opinion counts. Fringes keeps Personal & cultural expression."},
+   {v:"b",l:"Systems, set in Personal & cultural expression",d:"Philosophies and ways of life lead. MYP5 then has two units in the same context and none in Fairness & development."}]},
+ {id:"d7",tag:"MYP5 · Term 2",title:"Money and economics: which key concept?",
+  ctx:"Sentrum's Money unit (history of currency) and Gausel's economics unit (economic agents, prices, a business plan). The business plan already lives in MYP3 Tourism, so it drops here.",
+  opts:[
+   {v:"a",rec:true,l:"Change",d:"From barter to crypto, and how agents' choices shift. Gives MYP5 its only Change unit."},
+   {v:"b",l:"Systems",d:"The circular flow and markets as a system. Clean, but MYP5 then has Systems twice."},
+   {v:"c",l:"Global interactions",d:"Trade and interdependence lead. Overlaps with the Current World Order unit."}]},
+ {id:"d8",tag:"MYP5 · Term 1",title:"How are the Term 1 criteria split?",
+  ctx:"Fringes is last and optional, assessed B·C, so Current World Order takes A·D in Term 2. That leaves Who has the power and Money to share A·D and B·C in Term 1. Gausel's power unit already ran an investigation (A·B·C), and their economics skills (justify, evaluate) are Criterion D.",
+  opts:[
+   {v:"a",rec:true,l:"Who has the power B·C, Money A·D",d:"Students investigate a system of government and run a civic campaign. Money gets the eAssessment-style essay. Ethics feeds the investigation instead of having its own essay."},
+   {v:"b",l:"Who has the power A·D, Money B·C",d:"The Ethics argumentative essay stays. Money becomes a researched explainer, and Gausel's D-heavy economics skills are practised but not assessed."}]}
+];
+
+const REC = Object.fromEntries(DECISIONS.map(d=>[d.id,d.opts.find(o=>o.rec).v]));
+let choice = {...REC};
+
+function spine(c){
+  const y = {};
+  /* ---------- MYP1 ---------- */
+  const gov4 = {
+    a:{id:"gorg",term:2,title:"Governing Together",q:"How should people govern themselves, and why do nations cooperate?",kc:"Systems",rc:"Power, Governance, Cooperation",gc:"FD",crit:"BC",thread:"gov",origin:"M",
+       built:["Gausel's new MYP1 Global Organisations unit","Sentrum Democracy vs Dictatorship (moved down to MYP1)"],
+       changes:["Forms of government first (democracy, dictatorship, monarchy), then why states cooperate (UN, EU, NATO, Nordic Council)","An early version of Ideal Societies: students design the rules for a new organisation","Investigation and presentation (B·C)","Starts the governance strand that ends in MYP5"],
+       top:"Forms of government; the UN, EU, NATO, Nordic Council; what makes a fair organisation",sk:"Comparing systems; research and presentation",atl:"Collaboration: make fair and equitable decisions; Critical thinking: develop opposing arguments"},
+    b:{id:"gorg",term:2,title:"Global Organisations",q:"Why do nations work together through global organisations?",kc:"Global interactions",rc:"Cooperation, Power",gc:"FD",crit:"BC",thread:"gov",origin:"G",
+       built:["Gausel's new MYP1 Global Organisations unit"],changes:["As Gausel has planned it","Investigation and presentation (B·C)"],
+       top:"The UN, EU, NATO and other organisations; what they do and for whom",sk:"Research and presentation",atl:"Collaboration: make fair and equitable decisions; Research: access information"},
+    c:{id:"gorg",term:2,title:"Global Organisations",q:"Why do nations work together through global organisations?",kc:"Global interactions",rc:"Cooperation, Power",gc:"FD",crit:"BC",thread:"gov",origin:"G",
+       built:["Gausel's new MYP1 Global Organisations unit"],changes:["As Gausel has planned it","Governance itself waits until MYP4 Cities & Ideal Societies"],
+       top:"The UN, EU, NATO and other organisations; what they do and for whom",sk:"Research and presentation",atl:"Collaboration: make fair and equitable decisions; Research: access information"}
+  }[c.d0];
+  const ancGov = c.d0==="b";
+  y[1] = [
+    {id:"maps",term:1,title:"Maps & Settlements",q:"How do maps help us understand where and why people settle?",kc:"Time, place & space",rc:"Processes, Perspective, Sustainability",gc:"GS",crit:"BC",thread:"planet",origin:"M",
+     built:["Gausel \"How do maps help us understand our world?\" (Unit 1)","Sentrum Settlements"],
+     changes:["Map skills first (grid references, contours, map bias), then why settlements grow where they do","Research essay and annotated bibliography (B·C)","Gausel used Orientation in space & time; Globalization & sustainability fits sustainable settlements and frees Orientation for Ancient Civilisations"],
+     top:"Map skills and map bias; settlement site and growth; Manhattan, Rio, São Paulo across eras",sk:"Cartography, research, annotated bibliography",atl:"Research: access information; Organization: plan for summatives"},
+    {id:"anc",term:1,title:ancGov?"Ancient Civilisations: Power & Belief":"Ancient Civilisations & Belief",q:ancGov?"How did early civilisations organise power and belief?":"How did early civilisations and their beliefs shape the world?",kc:ancGov?"Systems":"Global interactions",rc:ancGov?"Power, Culture, Innovation & revolution":"Culture, Innovation & revolution",gc:"OST",crit:"AD",thread:ancGov?"gov":"change",origin:"M",
+     built:["Gausel \"What can we learn from Ancient Civilizations?\" (Unit 2: Indus Valley, early China)","Sentrum religion unit (moved into this slot)"].concat(ancGov?["Sentrum Democracy vs Dictatorship (Greece, Rome)"]:[]),
+     changes:["Hinduism, Buddhism, Confucianism as belief systems"].concat(ancGov?["Greek and Roman government compared with early India and China","Case-file debate: what is the best form of government? (A·D)","Very full; may need longer than Gausel's 14 weeks"]:["Source-based comparison of civilisations (A·D)"]),
+     top:"Indus Valley, early Chinese dynasties"+(ancGov?", Greece, Rome; forms of government":"")+"; Hinduism, Buddhism, Confucianism",sk:"Comparative analysis; source-based argument",atl:"Critical thinking: develop opposing arguments; Reflection: consider ATL development"},
+    {id:"hist",term:2,title:"Historical Evidence: the Middle Ages",q:"How do we know what life was like in the past?",kc:"Change",rc:"Causality, Perspective",gc:"STI",crit:"AD",thread:"change",origin:"M",
+     built:["Gausel \"What was life like in the Middle Ages?\" (Unit 3)","Sentrum Historical Evidence (history mysteries)"],
+     changes:["Medieval case files (Bayeux Tapestry, Black Death) alongside the mysteries","Source-based speech; balloon debate as formative (A·D)","Follows Ancient Civilisations, as in Gausel's order","Gausel used Identity, set in Fairness & development"],
+     top:"Middle Ages society, the Bayeux Tapestry, the Black Death; historical mysteries",sk:"Source evaluation (origin, purpose); building a historical argument",atl:"Communication: negotiate ideas; Critical thinking: gather and organise information"},
+    gov4
+  ];
+  /* ---------- MYP2 ---------- */
+  const energy = {id:"energy",term:2,title:"Biomes to Batteries",q:"How do natural systems shape the energy societies choose?",kc:"Systems",rc:"Sustainability, Resources, Innovation & revolution",gc:"STI",crit:"BD",thread:"planet",origin:"M",
+    built:["Gausel \"How can energy be produced sustainably?\"","Gausel 2024–25 \"What impact do humans have on our Earth's systems?\" (biomes, climate)","Vanishing Points Week 3 (biomes and data)"],
+    changes:["Biomes as systems, climate graphs, carbon cycle, deforestation","Then renewable and non-renewable energy (hydro, solar, geothermal, wind)","Research and argue for a sustainable energy approach (B·D)","Refugee content moves to MYP4 Population; the English IDU moves to Slavery"],
+    top:"Biomes and ecosystems; climate graphs; carbon cycle; deforestation; renewable and non-renewable energy",sk:"Climate-graph and data interpretation; research; evaluating options",atl:"Information literacy: connect sources; Creative thinking: consider multiple alternatives"};
+  const refugees = {id:"ref",term:2,title:"Refugees (IDU with English)",q:"How are refugees' experiences shaped by circumstances beyond their control?",kc:"Change",rc:"Causality, Conflict",gc:"OST",crit:"BC",thread:"id",origin:"S",
+    built:["Sentrum MYP2 IDU with English"],changes:["Annotated bibliography and historical-fiction chapter (B·C)", c.d1==="b"?"Sustainable energy moves into MYP3 Tourism and MYP4 Turning Points":"Gausel's energy unit folds into Human Development"],
+    top:"Historical refugee crises (WWII, post-war, contemporary); migration and displacement",sk:"Historical research; source use; historical fiction built on evidence",atl:"Organization: plan for goals; Communication: use media for audiences"};
+  const hdiCrit = c.d1==="a"?"AC":"AD";
+  const hdi = {id:"hdi",term:2,title:c.d1==="c"?"Human Development & Energy":"Human Development",q:"How fairly are goods and services shared, and how do we measure it?",kc:"Global interactions",rc:"Equity, Resources, Rights",gc:"FD",crit:hdiCrit,thread:"gov",origin:"M",
+    built:["Gausel Human Development (needs and wants, poverty, aid, HDI)","Sentrum Fair Access & HDI"].concat(c.d1==="c"?["Gausel \"How can energy be produced sustainably?\" as an energy-access strand"]:[]),
+    changes:["Maslow's needs and wants, poverty, HDI, international aid","Feeds MYP4 Cities & Ideal Societies", hdiCrit==="AC"?"Explainer on HDI and fair access (A·C)":"Argued report on fair access (A·D), so Term 2 still covers all four criteria alongside Refugees"].concat(c.d1==="c"?["Energy access (SDG 7) as one case of unequal access"]:[]),
+    top:"Needs and wants; poverty; HDI and development indicators; aid"+(c.d1==="c"?"; energy access":""),sk:"Interpreting development indicators; comparing places with data",atl:"Communication: skim texts; Collaboration: practise empathy"};
+  y[2] = [
+    {id:"ideas",term:1,title:"Ideas in Motion",q:"How have ideas and innovations changed the world?",kc:"Change",rc:"Culture, Causality, Innovation & revolution",gc:"PCE",crit:"BC",thread:"change",origin:"M",
+     built:["Gausel \"How have innovations and ideas changed the world?\" (Renaissance & Enlightenment)","Sentrum Ideas in Motion"],
+     changes:["Black Death, humanism, printing press, Scientific Revolution, Hobbes, Locke and Rousseau, absolute monarchy to democracy, Jenner","Owns revolutions of ideas, including the political revolutions","OPVL introduced; research-based essay (B·C; Sentrum's draft had B·D)"],
+     top:"Renaissance and Enlightenment, 1400–1850; printing press; Scientific Revolution; social contract thinkers; vaccines",sk:"OPVL source analysis; tracing the influence of ideas",atl:"Organization: organise complex information; Creative thinking: flexible thinking"},
+    {id:"slav",term:1,title:"Slavery",q:"How did the economics of slavery shape racism and development?",kc:"Time, place & space",rc:"Ideology, Causality",gc:"IR",crit:"AD",thread:"id",origin:"M",
+     built:["Sentrum Slavery (including the kafala system)","Gausel \"Exploring the impact of slavery and development\""],
+     changes:["Structured academic debate (A·D)", c.d1==="a"?"Becomes the IDU with English (historical fiction) now Refugees has left MYP2":"Industrial Revolution appears as economic context only"],
+     top:"Transatlantic slave trade; rise of racist ideology; legacy and development; modern slavery and kafala",sk:"COPVL source analysis; structured academic debate",atl:"Collaboration: listen actively; Communication: read critically"},
+    hdi,
+    c.d1==="a" ? energy : refugees
+  ];
+  /* ---------- MYP3 ---------- */
+  const wwi = {a:"Hook: WWI as the first industrialised war (1–2 weeks), then the Industrial Revolution, digital revolution and AI",b:"First half: WWI and a revolution it caused (Gausel's investigation). Second half: technological revolution and careers",c:"No WWI; the unit opens with the Industrial Revolution"}[c.d2];
+  y[3] = [
+    {id:"emp",term:1,title:"Empires",q:"How did geographic and demographic features shape empires?",kc:"Global interactions",rc:"Resources, Causality, Power",gc:"OST",crit:"AD",thread:"change",origin:"M",
+     built:["Sentrum Empires","Gausel \"How do global interactions impact societies?\" (empires, imperialism, the British Empire)"],
+     changes:["Add a source-analysis component so D is assessed in Year 9","Gausel used Fairness & development"],
+     top:"Rise and growth of empires; Age of Imperialism; the British Empire; Thai Empire",sk:"Source evaluation; geographic analysis",atl:"Collaboration: listen actively; Critical thinking: evaluate evidence"},
+    {id:"tour",term:1,title:"Tourism",q:"How does tourism impact communities?",kc:"Time, place & space",rc:"Sustainability, Resources, Choice",gc:"GS",crit:"BC",thread:"planet",origin:"M",
+     built:["Sentrum Tourism (Stavanger fieldwork)","Gausel \"How do we manage tourism?\""].concat(c.d1==="b"?["Sustainable energy from MYP2 Gausel"]:[]),
+     changes:["The programme's one business plan (dropped from MYP5)","Gausel used Change as the key concept"].concat(c.d1==="b"?["Adds energy use in tourism"]:[]),
+     top:"Tourism as an industry; supply and demand; impacts on environment and local people; Stavanger fieldwork",sk:"Economic reasoning; business planning; data analysis",atl:"Organization: set realistic goals; Research: collect and analyse data"},
+    {id:"rev",term:2,title:"Revolutions & Future Ready Careers",q:"How do revolutions reshape how people live and work?",kc:"Change",rc:"Innovation & revolution, Causality, Choice",gc:"STI",crit:"AC",thread:"change",origin:"M",
+     built:["Gausel \"War and Revolution: why do societies experience revolution?\"","Sentrum Future Ready Careers","Turning Points Week 4 (Industrial Revolution) moves in"],
+     changes:[wwi,"Ends with AI, automation and the careers video (A·C)","Gausel used Orientation in space & time"],
+     top:"WWI; Industrial Revolution; digital revolution; AI, automation and emerging careers",sk:"Data as evidence; trend forecasting; informational communication",atl:"Critical thinking: identify trends and forecast; Transfer: connect disciplines"},
+    {id:"home",term:2,title:"Homelands & Culture",q:"Which stories motivate us to unite and form community?",kc:"Time, place & space",rc:"Culture, Identity",gc:"PCE",crit:"BD",thread:"id",origin:"M",
+     built:["Sentrum Homelands","Gausel \"What is culture?\" (TED-style talk)"],
+     changes:["Research-led argued speech (B·D)","Personal & cultural expression, as Gausel has it, so MYP3 no longer uses Orientation in space & time twice"],
+     top:"Culture and identity; national stories (Apartheid, the American Dream, modern India); colonisation and migration",sk:"Research; analytical argument; source evaluation",atl:"Communication: speaking for different audiences; Critical thinking: evaluate propositions"}
+  ];
+  /* ---------- MYP4 ---------- */
+  const popChanges = ["Debate response on whether population growth should be managed (Gausel, eAssessment-style)","Demographic transition, migration, megacities"];
+  if(c.d1==="a") popChanges.push("Gains refugee and forced-migration content from MYP2");
+  const cityBuilt = ["Gausel \"The future of cities\"","Sentrum Ideal Societies"];
+  const cityChanges = ["Urbanisation, governance and which problems get solved, by whom","HDI from MYP2 as the measure of a fair city","Investigation and pitch for a city solution (B·C)"];
+  const hateCases = {a:"WWII and Holocaust core for all; modern cases bring in Fringes' radicalisation, online extremism and prevention, so every student meets the LK20 aim",b:"WWII and Holocaust core; inquiry compares one historical case (Uyghurs, Rwanda, Bosnia, kafala, apartheid)",c:"WWII and Holocaust only, as Gausel teaches it now",d:"Thematic: hate as a process, with WWII as one of three equal cases (check LK20 audit)"}[c.d4];
+  const hate = {id:"hate",term:2,title:"Why does hate spread?",q:"How do ideas, leaders and fear turn neighbours into enemies?",kc:"Global interactions",rc:"Identity, Perspective, Causality, Power",gc:"IR",crit:"AD",thread:"id",origin:"M",
+    built:["Gausel \"Why do identities and relationships change?\" (WWII)"].concat(c.d3==="a"?["Sentrum Charismatic Leaders as the leadership lens"]:[]),
+    changes:[hateCases,"Links back to Slavery (MYP2) and forward to Fringes (MYP5)","Criteria narrowed from all four to A·D (essay); inquiry is formative"],
+    top:"Road to WWII; propaganda; antisemitism and the Holocaust; "+(c.d4==="a"?"modern radicalisation and extremism":"comparison cases of persecution"),sk:"Source analysis; cause and effect; identifying bias",atl:"Communication: make inferences; Information literacy: evaluate sources"};
+  const tp = {
+    a:{crit:"BC",changes:["Anthropocene, disease, natural disasters and why hurricanes are intensifying","The Commons and climate equity (California wildfires)","Short story IDU with English; Vanishing Points dossier as the research log (B·C)"]},
+    b:{crit:"BC",changes:["Half one: Turning Points history (disease, disasters)","Half two: Vanishing Points biomes, Commons and op-ed","Covers everything; runs long for one slot"]},
+    c:{crit:"AC",changes:["Unchanged: includes the Industrial Revolution week (doubles MYP3)","Vanishing Points retires; climate stays thin","Criteria A·C with B iii, as now"]}}[c.d5];
+  if(c.d1!=="a" && c.d5!=="c") tp.changes.unshift("Keeps the biomes and data week, because biomes isn't taught in MYP2");
+  const turning = {id:"tp",term:2,title:"Turning Points",q:"Can better resource management change society?",kc:"Change",rc:"Causality, Resources, Sustainability",gc:"GS",crit:tp.crit,thread:"planet",origin:"M",
+    built:["Sentrum Turning Points (IDU with English)"].concat(c.d5!=="c"?["Vanishing Points (not running in 2027–28)"]:[]).concat(["Replaces Gausel \"What impact do humans have on natural environments?\" (same key concept and context)"]),
+    changes:tp.changes,
+    top:"Anthropocene; plagues; earthquakes and hurricanes; the Commons; climate equity",sk:"Data interpretation; causal analysis; research log",atl:"Collaboration: build consensus; Critical thinking: formulate questions"};
+  const pop = {id:"pop",term:1,title:"Where are all the people?",q:"How does population change affect individuals and societies?",kc:"Change",rc:"Causality",gc:"OST",crit:"AD",thread:"planet",origin:"G",built:["Gausel MYP4 Unit 1","Sentrum population primer"],changes:popChanges,
+    top:"Population growth and decline; DTM; pyramids; migration and IDPs; China's one-child policy",sk:"Data interpretation; demographic analysis; argued response",atl:"Information literacy: collect and analyse data; Reflection: ethical implications"};
+  if(c.d3==="a"){
+    y[4] = [pop,
+      {id:"city",term:1,title:"Cities & Ideal Societies",q:"Who should solve a city's problems, and how?",kc:"Systems",rc:"Governance, Equity, Sustainability, Choice",gc:"FD",crit:"BC",thread:"gov",origin:"M",built:cityBuilt,changes:cityChanges.concat(["Fairness & development fixes the context Sentrum flagged as off; Gausel used Scientific & technical innovation"]),
+       top:"Urbanisation; megacities; sustainable cities (Curitiba, Masdar); utopias and just government",sk:"Investigation guide; proposal and pitch",atl:"Creative thinking: create novel solutions; Communication: present to an audience"},
+      hate, turning];
+  } else {
+    y[4] = [
+      {id:"cl",term:1,title:"Charismatic Leaders",q:"How do charismatic leaders impact their societies and periods?",kc:"Time, place & space",rc:"Identity, Perspective, Power",gc:"IR",crit:"AD",thread:"id",origin:"S",built:["Sentrum MYP4 unit"],changes:["Structured academic controversy / knockout debate"],
+       top:"Political, thought and business leaders across eras; significance and counterfactuals",sk:"COPVL source analysis; counterfactual reasoning",atl:"Reflection: flexibility in strategies; Communication: draw conclusions"},
+      {id:"city",term:1,title:"People, Cities & Power",q:"Where are all the people, and who decides how cities work?",kc:"Systems",rc:"Causality, Governance, Equity, Sustainability",gc:"FD",crit:"BC",thread:"gov",origin:"M",built:["Gausel \"Where are all the people?\""].concat(cityBuilt),changes:popChanges.slice(1).concat(cityChanges),
+       top:"Population change; urbanisation; sustainable cities; just government",sk:"Data interpretation; investigation guide; proposal",atl:"Information literacy: analyse data; Creative thinking: novel solutions"},
+      hate, turning];
+  }
+  /* ---------- MYP5 ---------- */
+  const pw = {a:"FD",b:"PCE"}[c.d6];
+  const mkc = {a:"Change",b:"Systems",c:"Global interactions"}[c.d7];
+  const pcrit = c.d8==="a"?"BC":"AD", mcrit = c.d8==="a"?"AD":"BC";
+  y[5] = [
+    {id:"power",term:1,title:"Who has the power, and who decides what's right?",q:"Why are decisions made, and whose opinion matters?",kc:"Systems",rc:"Power, Choice, Equity, Perspective",gc:pw,crit:pcrit,thread:"gov",origin:"M",built:["Gausel \"Who has the Power?\"","Sentrum Ethics"],
+     changes:[pw==="FD"?"Ethical theories become tools for judging governance and civic responsibility":"Philosophies lead; governance becomes the case material","Nordic model and Norwegian elections as the local case",pcrit==="BC"?"Investigation of a government system plus a civic campaign (B·C)":"Argumentative essay using an ethical theory (A·D)"],
+     top:"Systems of government; the Nordic model; ethical theories; civic responsibility",sk:"Ethical reasoning; investigation; media analysis",atl:"Reflection: ethical implications; Critical thinking: evaluate arguments"},
+    {id:"money",term:1,title:"Money & Markets",q:"To what extent does money unlock human potential, and for whom?",kc:mkc,rc:"Resources, Choice, Perspective, Scarcity",gc:"GS",crit:mcrit,thread:"change",origin:"M",built:["Sentrum Money","Gausel Economics (economic agents, prices)"],
+     changes:["Business plan drops (MYP3 Tourism has it)","Moves to Term 1 so the core units finish before eAssessment preparation","Gausel's overview lists Personal & cultural expression; Toddle lists Globalization & sustainability",mcrit==="AD"?"Essay: justify why an agent would think this, then evaluate (A·D)":"Researched explainer on a money concept (B·C)"],
+     top:"History of money; economic agents; supply and demand; circular flow; cryptocurrency",sk:"Economic reasoning; perspective-taking; evaluation",atl:"Self-management: use technology effectively; Critical thinking: revise understanding"},
+    {id:"cwo",term:2,title:"Current World Order",q:"How is power managed between states today?",kc:"Global interactions",rc:"Power, Perspective, Conflict, Cooperation",gc:"IR",crit:"AD",thread:"gov",origin:"M",
+     built:["Gausel Cold War and \"Rivalries and Resolutions\" (already set in Identities & relationships)","Sentrum Superpowers","Turning Points Week 6 (capitalism vs communism) moves in"].concat(c.d2==="a"?["Gausel's revolution-after-WWI investigation as the origin story"]:[]),
+     changes:["Cold War as the origin story; Cuban Missile Crisis simulation as formative","Today's order: UN, alliances, new blocs","Essay evaluating diplomacy and leadership (A·D), in the eAssessment style"],
+     top:"Origins of communism; Cold War crises; the UN and alliances; today's rivalries",sk:"Simulation and role-play; perspective analysis; source evaluation",atl:"Collaboration: practise empathy; Communication: negotiate ideas"},
+    {id:"fringe",term:2,title:"Fringes (optional)",q:"How is identity constructed?",kc:"Identity",rc:"Power, Perspective",gc:"PCE",crit:"BC",thread:"id",origin:"S",built:["Sentrum MYP5 unit"],
+     changes:["Optional: for students not sitting the eAssessment, who otherwise have eAssessment preparation in this slot",c.d4==="a"?"Radicalisation basics now come in MYP4 \"Why does hate spread?\", so Fringes goes deeper on how identity is constructed":"Holds the programme's radicalisation and extremism-prevention work, so students sitting the eAssessment miss it","Creative product (B·C)"],
+     top:"Social constructivism; identity and ideology; movements outside the mainstream since the 1950s",sk:"Source and media analysis; identity and ideology analysis",atl:"Organization: organise complex information; Critical thinking: evaluate propositions"}
+  ];
+  return y;
+}
+
+/* ---------- rendering ---------- */
+const $ = s=>document.querySelector(s);
+let activeId = "gorg";
+let prev = {};
+
+function renderDecisions(){
+  const box = $("#decisions"); box.innerHTML="";
+  DECISIONS.forEach(d=>{
+    const el = document.createElement("div"); el.className="dec";
+    el.innerHTML = `<div class="tag">${d.tag}</div><h3>${d.title}</h3><p class="ctx">${d.ctx}</p>`;
+    d.opts.forEach(o=>{
+      const id = `${d.id}-${o.v}`;
+      const lab = document.createElement("label"); lab.className="opt"+(choice[d.id]===o.v?" sel":""); lab.htmlFor=id;
+      lab.innerHTML = `<input type="radio" name="${d.id}" id="${id}" value="${o.v}" ${choice[d.id]===o.v?"checked":""}><div><div class="ol">${o.l}${o.rec?'<span class="rec">Recommended</span>':''}</div><div class="od">${o.d}</div></div>`;
+      lab.querySelector("input").addEventListener("change",()=>{choice[d.id]=o.v; update(true);});
+      el.appendChild(lab);
+    });
+    box.appendChild(el);
+  });
+}
+
+function renderSpine(y){
+  const g = $("#spine"); g.innerHTML="";
+  g.insertAdjacentHTML("beforeend",`<div></div><div class="colh span2">Term 1 · autumn</div><div class="colh span2">Term 2 · spring</div>`);
+  const now = {}; const had = Object.keys(prev).length>0;
+  for(let yr=1; yr<=5; yr++){
+    g.insertAdjacentHTML("beforeend",`<div class="yr">MYP${yr}<small>Year ${yr+6}</small></div>`);
+    y[yr].forEach((u,i)=>{
+      const key = yr+"-"+i;
+      const sig = [u.title,u.kc,u.gc,u.crit,u.changes.join("|")].join("/");
+      now[key]=sig;
+      const b = document.createElement("button"); b.type="button";
+      b.className = "card"+(u.id===activeId?" active":"")+(had && prev[key]!==sig?" changed":"");
+      b.style.setProperty("--tc",`var(${THREAD[u.thread]})`);
+      b.setAttribute("aria-label",`${u.title}, MYP${yr}, details`);
+      b.innerHTML = `<span class="badge b-${u.origin}">${ORIGIN[u.origin]}</span><span class="t">${u.title}</span><span class="q">${u.q}</span><span class="chips">${kcChip(u.kc)}${gcChip(u.gc)}<span class="chip crit">${u.crit.split("").join(" · ")}</span></span>`;
+      b.addEventListener("click",()=>{activeId=u.id; update(true);});
+      g.appendChild(b);
+    });
+  }
+  prev = now;
+}
+
+function renderDetail(y){
+  let u,yr;
+  for(let i=1;i<=5;i++){const f=y[i].find(x=>x.id===activeId); if(f){u=f;yr=i;}}
+  if(!u){u=y[1][2];yr=1;activeId=u.id;}
+  $("#detail").innerHTML = `<div class="hint">Select any unit to see what it is built from.</div>
+   <h3>MYP${yr} · ${u.title}</h3>
+   <div class="meta"><span><b>Key concept</b> ${kcChip(u.kc)}</span><span><b>Related</b> ${u.rc}</span><span><b>Global context</b> ${gcChip(u.gc)}</span><span><b>Criteria</b> ${u.crit.split("").join(" · ")}</span><span><b>Strand</b> ${THREADNAME[u.thread]}</span></div>
+   <div class="cols"><div><b>Built from</b><ul>${u.built.map(x=>`<li>${x}</li>`).join("")}</ul></div><div><b>What changes</b><ul>${u.changes.map(x=>`<li>${x}</li>`).join("")}</ul></div></div>`;
+}
+
+function renderChecks(y){
+  let rows = "";
+  const allGC = new Set(); const kcYears = {"Change":new Set(),"Global interactions":new Set(),"Systems":new Set(),"Time, place & space":new Set()};
+  for(let yr=1;yr<=5;yr++){
+    const cells = [1,2].map(t=>{
+      const s = new Set(y[yr].filter(u=>u.term===t).flatMap(u=>u.crit.split("")));
+      const miss = ["A","B","C","D"].filter(k=>!s.has(k));
+      return miss.length?`<div class="ck bad"><div class="lbl">Term ${t} criteria</div>Missing ${miss.join(", ")}</div>`:`<div class="ck ok"><div class="lbl">Term ${t} criteria</div>A B C D all assessed</div>`;
+    });
+    const gcs = y[yr].map(u=>u.gc); gcs.forEach(g=>allGC.add(g));
+    y[yr].forEach(u=>{ if(kcYears[u.kc]) kcYears[u.kc].add(yr); });
+    const dup = gcs.filter((g,i)=>gcs.indexOf(g)!==i);
+    const gccell = dup.length?`<div class="ck warn"><div class="lbl">Global contexts</div>${GC[dup[0]]} used twice</div>`:`<div class="ck ok"><div class="lbl">Global contexts</div>Four different</div>`;
+    rows += `<div class="yr" style="font-size:14px">MYP${yr}</div>${cells.join("")}${gccell}`;
+  }
+  const missingGC = Object.keys(GC).filter(k=>!allGC.has(k));
+  const kcp = Object.entries(kcYears).map(([k,s])=>`<span class="pill ${s.size>=3?"ok":"warn"}"><span class="sw" style="background:var(--${KCCLS[k]})"></span>${k}: MYP ${[...s].sort().join(", ")||"none"}</span>`).join("");
+  $("#checks").innerHTML = `<h3>Coverage checks for this path</h3>
+   <div style="overflow-x:auto"><div class="ckgrid">${rows}</div></div>
+   <div class="prog"><span class="pill ${missingGC.length?"warn":"ok"}">${missingGC.length?"Missing context: "+missingGC.map(k=>GC[k]).join(", "):"All six global contexts used"}</span>${kcp}</div>
+   <p class="hint">Key concepts in green recur in three or more years, so they spiral rather than appear once.</p>`;
+}
+
+function renderTables(y){
+  const r = (yr,where,now,next)=>`<tr><td class="y">${yr}</td><td>${where}</td><td>${now}</td><td>${next}</td></tr>`;
+  const wwiNext = {a:'<span class="mv">MYP3 Revolutions:</span> 1–2 week hook on the first industrialised war',b:'<span class="mv">MYP3 Revolutions:</span> first half of the unit, with the revolution it caused',c:"Not taught in I&amp;S. Check where LK20 expects it"}[choice.d2];
+  const gRevNext = {a:'Merges into Revolutions &amp; Future Ready Careers. The revolution-after-WWI investigation moves to <span class="mv">MYP5 Current World Order</span>',b:"Merges into Revolutions &amp; Future Ready Careers and keeps its revolution investigation",c:"Merges into Revolutions &amp; Future Ready Careers without the WWI material"}[choice.d2];
+  const tpNext = choice.d5==="c"?"Stays as it is, so the Industrial Revolution is taught twice (MYP3 and MYP4)":'<span class="mv">Leaves.</span> Industrial Revolution to MYP3; capitalism vs communism to MYP5 Current World Order';
+  $("#revtable").innerHTML = `<thead><tr><th>Year</th><th>Unit</th><th>Now</th><th>In this path</th></tr></thead><tbody>
+   ${r("MYP1","Historical Evidence / Ancient Civilisations","Innovation &amp; revolution as a related concept","No change; concept only")}
+   ${r("MYP2","Ideas in Motion (both schools)","Scientific Revolution; Enlightenment; Gausel's version ends with absolute monarchy giving way to democracy","Owns revolutions of ideas, including the political revolutions (American, French)")}
+   ${r("MYP2","Slavery","Industrial Revolution as economic context","Context only, no Industrial Revolution teaching")}
+   ${r("MYP3","Gausel War and Revolution","Nationalism, WWI, then a revolution caused by WWI",gRevNext)}
+   ${r("MYP3","WWI","Gausel MYP3 only; no Sentrum coverage",wwiNext)}
+   ${r("MYP3","Future Ready Careers","Digital innovation, AI (moved down from MYP4)","End point of the same unit; owns the Industrial Revolution")}
+   ${r("MYP4","Turning Points","Week 4 Industrial Revolution; Week 6 capitalism vs communism",tpNext)}
+   ${r("MYP4","Gausel Cities","Innovation &amp; revolution as a related concept (smart cities)","Stays as a concept")}
+   ${r("MYP5","Ethics / Gausel Economics","Industrial and technological revolution as context","AI ethics case stays; no Industrial Revolution teaching")}
+   </tbody>`;
+  const m2 = {a:'<span class="mv">Biomes to Batteries:</span> biomes as systems, carbon cycle, deforestation, then energy choices',b:"Nothing. Energy moves to MYP3 Tourism and MYP4 Turning Points",c:"Energy access only, inside Human Development"}[choice.d1];
+  const m4 = {a:"Why hurricanes are intensifying, wildfires, the Commons, climate equity",b:"Disasters and disease, then biomes, the Commons and a climate op-ed",c:"Disasters and disease as historical turning points; little on climate change"}[choice.d5] + (choice.d1!=="a"&&choice.d5!=="c"?"; also carries biomes and data":"");
+  $("#climtable").innerHTML = `<thead><tr><th>Year</th><th>Unit</th><th>Lens</th><th>Content</th></tr></thead><tbody>
+   ${r("MYP1","Maps &amp; Settlements","Place","Sustainable development of settlements across eras")}
+   ${r("MYP2",choice.d1==="a"?"Biomes to Batteries":(choice.d1==="c"?"Human Development &amp; Energy":"(none)"),"Ecological systems",m2)}
+   ${r("MYP3","Tourism","Local impact","Environment and local populations; Stavanger fieldwork"+(choice.d1==="b"?"; energy use":""))}
+   ${r("MYP3","Revolutions","Technology","The Industrial Revolution as the start of fossil-fuel dependence and the Anthropocene")}
+   ${r("MYP4","Cities","Systems and governance","Sustainable urban systems; who acts on them")}
+   ${r("MYP4","Turning Points","Cause and effect",m4)}
+   ${r("MYP5","Money &amp; Ethics","Choice and responsibility","Scarcity and externalities; environmental ethics cases")}
+   </tbody>`;
+}
+
+const CRITNAME = {A:"A Knowing & understanding",B:"B Investigating",C:"C Communicating",D:"D Thinking critically"};
+function renderBlackboard(y){
+  let h = `<thead><tr><th>Unit</th><th>Global context</th><th>Key &amp; related concepts</th><th>Topics / subject knowledge</th><th>Subject skills</th><th>ATL skills</th><th>Assessment</th></tr></thead><tbody>`;
+  for(let yr=1;yr<=5;yr++){
+    h += `<tr><td colspan="7" style="background:var(--bg);font-weight:600">MYP${yr} (Year ${yr+6})</td></tr>`;
+    y[yr].forEach((u,i)=>{
+      h += `<tr><td class="bbunit"><b>Unit ${i+1} · T${u.term}</b>${u.title}<div class="alignnote">${ORIGIN[u.origin]}</div></td><td>${gcChip(u.gc)}</td><td>${kcChip(u.kc)}<br>${u.rc}</td><td>${u.top}</td><td>${u.sk}</td><td>${u.atl}</td><td>${u.crit.split("").map(k=>CRITNAME[k]).join("<br>")}</td></tr>`;
+    });
+  }
+  $("#bbtable").innerHTML = h+"</tbody>";
+}
+
+function bbText(y){
+  let t="";
+  for(let yr=1;yr<=5;yr++){
+    t += `MYP${yr} (Year ${yr+6})\n`;
+    y[yr].forEach((u,i)=>{
+      t += `Unit ${i+1} (Term ${u.term}): ${u.title} [${ORIGIN[u.origin]}]\n  Question: ${u.q}\n  Global context: ${GC[u.gc]}\n  Key concept: ${u.kc}; related: ${u.rc}\n  Topics: ${u.top}\n  Subject skills: ${u.sk}\n  ATL: ${u.atl}\n  Assessment: ${u.crit.split("").join(", ")}\n`;
+    });
+    t+="\n";
+  }
+  return t;
+}
+
+function summaryText(y){
+  let t = "OneBISS I&S spine — path chosen\n\nDecisions:\n";
+  DECISIONS.forEach(d=>{const o=d.opts.find(o=>o.v===choice[d.id]); t+=`- ${d.tag}: ${d.title}\n  → ${o.l}${o.rec?" (recommended)":""}\n`;});
+  t += "\nSpine:\n";
+  for(let yr=1;yr<=5;yr++){
+    t += `MYP${yr}\n`;
+    y[yr].forEach(u=>{t+=`  T${u.term} ${u.title} [${ORIGIN[u.origin]}] — ${u.kc}; ${GC[u.gc]}; ${u.crit.split("").join("·")}\n`;});
+  }
+  return t;
+}
+
+function update(soft){
+  const y = spine(choice);
+  if(!soft) renderDecisions(); else document.querySelectorAll(".opt").forEach(l=>{const i=l.querySelector("input"); l.classList.toggle("sel",i.checked);});
+  renderSpine(y); renderDetail(y); renderChecks(y); renderTables(y); renderBlackboard(y);
+}
+
+async function copyOut(txt,status,area){
+  try{ await navigator.clipboard.writeText(txt); $(status).textContent="Copied."; $(area).style.display="none"; }
+  catch(e){ const ta=$(area); ta.value=txt; ta.style.display="block"; ta.select(); $(status).textContent="Copy was blocked here; select the text below instead."; }
+}
+$("#reset").addEventListener("click",()=>{choice={...REC}; update();});
+$("#copy").addEventListener("click",()=>copyOut(summaryText(spine(choice)),"#copystatus","#copyout"));
+$("#copybb").addEventListener("click",()=>copyOut(bbText(spine(choice)),"#bbstatus","#bbout"));
+
+update();
+
+</script>
+</body>
+</html>
